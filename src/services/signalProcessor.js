@@ -29,16 +29,11 @@ class SignalProcessor {
         return results;
       }
       
-      // 2. Local Coin Filtreleri (15m/30m)
-      logger.info('🎯 Local coin filtreleri kontrol ediliyor...');
-      const localResult = await localFilters.check(signalData);
+      // 2. Local Coin Filtreleri - KALDIRILDI (Gereksiz ve çok katı)
+      // rVOL threshold'u çok yüksek olduğu için hiç sinyal geçirmiyor
+      const localResult = { passed: true, reason: 'Local filtreler kaldırıldı - gereksiz' };
       results.filterResults.localFilters = localResult;
-      
-      if (!localResult.passed) {
-        results.reason = `Local filtre: ${localResult.reason}`;
-        results.processingTime = Date.now() - startTime;
-        return results;
-      }
+      logger.info('✅ Local filtreler kaldırıldı - sadece Global filter + AlphaTrend kullanılıyor');
       
       // 3. AI Katmanı (opsiyonel)
       if (configService.get('AI_ENABLED')) {

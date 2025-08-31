@@ -14,8 +14,8 @@ class ConfigService {
       this.config.set('MAX_TRADES_PER_COIN', parseInt(process.env.MAX_TRADES_PER_COIN) || 2);
       
       // Risk management
-      this.config.set('DEFAULT_TP_PERCENT', parseFloat(process.env.DEFAULT_TP_PERCENT) || 0.5);
-      this.config.set('DEFAULT_SL_PERCENT', parseFloat(process.env.DEFAULT_SL_PERCENT) || 0.3);
+      this.config.set('DEFAULT_TP_PERCENT', parseFloat(process.env.DEFAULT_TP_PERCENT) || 1.0);
+      this.config.set('DEFAULT_SL_PERCENT', parseFloat(process.env.DEFAULT_SL_PERCENT) || 0.2);
       this.config.set('DAILY_LOSS_CAP_PERCENT', parseFloat(process.env.DAILY_LOSS_CAP_PERCENT) || 5);
       
       // Trading ayarları
@@ -28,8 +28,8 @@ class ConfigService {
       this.config.set('DCA_DISTANCE_PERCENT', parseFloat(process.env.DCA_DISTANCE_PERCENT) || 3);
       
       // Filter ayarları
-      this.config.set('ADX_THRESHOLD', parseFloat(process.env.ADX_THRESHOLD) || 20);
-      this.config.set('RVOL_THRESHOLD', parseFloat(process.env.RVOL_THRESHOLD) || 1.2);
+      this.config.set('ADX_THRESHOLD', parseFloat(process.env.ADX_THRESHOLD) || 10); // Daha esnek
+      this.config.set('RVOL_THRESHOLD', parseFloat(process.env.RVOL_THRESHOLD) || 0.8); // Daha esnek
       this.config.set('BB_WIDTH_THRESHOLD', parseFloat(process.env.BB_WIDTH_THRESHOLD) || 0.01);
       
       // AI ayarları

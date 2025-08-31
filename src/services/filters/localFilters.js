@@ -30,20 +30,27 @@ class LocalFilters {
       
       logger.info(`Local filtreler kontrol ediliyor: ${symbol} ${timeframe}`);
       
+      // Debug: Console.log ekle
+      console.log(`🔍 Local filter check: ${symbol} ${action} ${timeframe}`);
+      
       // Kline data al (200 bar - EMA200 için yeterli)
       const klineData = await technicalAnalysis.getKlineData(symbol, timeframe, 200);
       
       // 1. EMA200 Trend Kontrolü
       const emaCheck = await this.checkEMATrend(klineData, action);
+      console.log(`🔍 EMA200 check: ${emaCheck.passed ? '✅' : '❌'} - ${emaCheck.reason}`);
       
       // 2. ADX14 Trend Gücü
       const adxCheck = await this.checkADXStrength(klineData);
+      console.log(`🔍 ADX14 check: ${adxCheck.passed ? '✅' : '❌'} - ${adxCheck.reason}`);
       
       // 3. rVOL Hacim Teyidi
       const volumeCheck = await this.checkRelativeVolume(klineData);
+      console.log(`🔍 rVOL check: ${volumeCheck.passed ? '✅' : '❌'} - ${volumeCheck.reason}`);
       
       // 4. Bollinger Bands Width
       const bbCheck = await this.checkBollingerBandsWidth(klineData);
+      console.log(`🔍 BB Width check: ${bbCheck.passed ? '✅' : '❌'} - ${bbCheck.reason}`);
       
       const filterResults = {
         ema200: emaCheck,
@@ -55,8 +62,11 @@ class LocalFilters {
       // Tüm filtreler geçmeli
       const allPassed = Object.values(filterResults).every(result => result.passed);
       
+      console.log(`🔍 All filters passed: ${allPassed ? '✅' : '❌'}`);
+      
       if (allPassed) {
         this.stats.passed++;
+        console.log(`🎯 Local filter PASSED for ${symbol} ${action}`);
         return {
           passed: true,
           reason: 'Tüm local filtreler başarılı',
@@ -68,6 +78,8 @@ class LocalFilters {
           .filter(([_, result]) => !result.passed)
           .map(([name, result]) => `${name}: ${result.reason}`)
           .join(', ');
+        
+        console.log(`❌ Local filter FAILED for ${symbol} ${action}: ${failedFilters}`);
         
         // İstatistik için fail sebeplerini kaydet
         Object.entries(filterResults).forEach(([name, result]) => {
@@ -102,18 +114,30 @@ class LocalFilters {
       const isAboveEMA = currentPrice > ema200;
       const trendDirection = isAboveEMA ? 'BULLISH' : 'BEARISH';
       
-      // Sinyal yönü ile trend uyumluluğu
-      const isCompatible = (signalAction === 'BUY' && isAboveEMA) || 
-                          (signalAction === 'SELL' && !isAboveEMA);
+      // Daha esnek trend kontrolü - %2 tolerans
+      const priceDistance = Math.abs(currentPrice - ema200) / ema200;
+      const tolerance = 0.02; // %2 tolerans
+      
+      // Sinyal yönü ile trend uyumluluğu (daha esnek)
+      let isCompatible = false;
+      
+      if (signalAction === 'BUY') {
+        // BUY için: BULLISH veya EMA'ya yakın (flat market)
+        isCompatible = isAboveEMA || priceDistance < tolerance;
+      } else if (signalAction === 'SELL') {
+        // SELL için: BEARISH veya EMA'ya yakın (flat market)
+        isCompatible = !isAboveEMA || priceDistance < tolerance;
+      }
       
       return {
         passed: isCompatible,
         reason: isCompatible ? 
-          `EMA200 trend uyumlu (${trendDirection})` : 
+          `EMA200 trend uyumlu (${trendDirection}, tolerans: %${(tolerance * 100).toFixed(1)})` : 
           `EMA200 trend uyumsuz - Signal: ${signalAction}, Trend: ${trendDirection}`,
         value: ema200,
         currentPrice,
-        trend: trendDirection
+        trend: trendDirection,
+        priceDistance: (priceDistance * 100).toFixed(2) + '%'
       };
       
     } catch (error) {
@@ -127,7 +151,7 @@ class LocalFilters {
   
   async checkADXStrength(klineData) {
     try {
-      const adxThreshold = configService.get('ADX_THRESHOLD'); // Default: 20
+      const adxThreshold = configService.get('ADX_THRESHOLD') || 10; // Default: 10 (daha esnek)
       const adx14 = await technicalAnalysis.calculateADX(klineData, 14);
       
       const passed = adx14 > adxThreshold;
@@ -152,7 +176,7 @@ class LocalFilters {
   
   async checkRelativeVolume(klineData) {
     try {
-      const rvolThreshold = configService.get('RVOL_THRESHOLD'); // Default: 1.2
+      const rvolThreshold = configService.get('RVOL_THRESHOLD') || 0.8; // Default: 0.8 (daha esnek)
       const relativeVolume = await technicalAnalysis.calculateRelativeVolume(klineData, 20);
       
       const passed = relativeVolume > rvolThreshold;

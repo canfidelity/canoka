@@ -24,8 +24,8 @@ class GlobalFilter {
       const { action } = signalData;
       
       // BTC ve ETH'nin 4h EMA200 durumunu kontrol et
-      const btcAnalysis = await this.getGlobalMarketTrend('BTCUSDT', '4h');
-      const ethAnalysis = await this.getGlobalMarketTrend('ETHUSDT', '4h');
+      const btcAnalysis = await this.getGlobalMarketTrend('BTC-USDT', '4h');
+      const ethAnalysis = await this.getGlobalMarketTrend('ETH-USDT', '4h');
       
       logger.info('Global market durumu:', {
         BTC: { 

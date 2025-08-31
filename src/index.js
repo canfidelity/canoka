@@ -7,10 +7,12 @@ const logger = require('./utils/logger');
 const webhookRoutes = require('./routes/webhook');
 const statsRoutes = require('./routes/stats');
 const configRoutes = require('./routes/config');
+const backtestRoutes = require('./routes/backtest');
 const { initializeServices } = require('./services');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const HOST = '0.0.0.0'; // Tüm IP'lerden erişim
 
 // Middleware
 app.use(helmet());
@@ -22,6 +24,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/webhook', webhookRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/config', configRoutes);
+app.use('/api/backtest', backtestRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -46,8 +49,8 @@ async function startBot() {
     // Initialize all services
     await initializeServices();
     
-    app.listen(PORT, () => {
-      logger.info(`🎯 Bot ${PORT} portunda çalışıyor`);
+    app.listen(PORT, HOST, () => {
+      logger.info(`🎯 Bot ${HOST}:${PORT} adresinde çalışıyor`);
       logger.info('📊 15m Scalping sistemi aktif');
     });
     

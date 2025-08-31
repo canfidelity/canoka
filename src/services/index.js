@@ -30,7 +30,7 @@ async function initializeServices() {
     
     // Cron job'ları başlat
     cronJobs.initializeAll();
-    logger.info('✅ Cron job'ları başlatıldı');
+    logger.info('✅ Cron jobs started');
     
     logger.info('🎯 Tüm servisler aktif');
     
