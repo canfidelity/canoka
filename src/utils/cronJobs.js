@@ -4,6 +4,7 @@ const telegramService = require('../services/telegramService');
 const exchangeService = require('../services/exchangeService');
 const riskManager = require('../services/riskManager');
 const technicalAnalysis = require('../services/technicalAnalysis');
+const advancedTradingService = require('../services/advancedTradingService');
 
 class CronJobs {
   constructor() {
@@ -67,6 +68,20 @@ class CronJobs {
           await this.handleCanceledOrder(orderInfo, order);
         }
         
+        // Advanced trading features kontrolü
+        if (order.status === 'filled') {
+          const currentPrice = await this.getCurrentPrice(orderInfo.symbol);
+          const positionClosed = await advancedTradingService.processAdvancedFeatures(
+            orderInfo.id, 
+            orderInfo, 
+            currentPrice
+          );
+          
+          if (positionClosed) {
+            logger.info(`🎯 Position closed by advanced features: ${orderInfo.id}`);
+          }
+        }
+        
       } catch (error) {
         logger.error(`Order ${orderInfo.id} kontrol hatası:`, error);
       }
@@ -123,6 +138,17 @@ ${order.side === 'buy' ? '🟢' : '🔴'} <b>Side:</b> ${order.side.toUpperCase(
 
 ⏱ <b>Zaman:</b> ${new Date().toLocaleString('tr-TR')}
     `.trim());
+  }
+  
+  async getCurrentPrice(symbol) {
+    try {
+      const technicalAnalysis = require('../services/technicalAnalysis');
+      const klineData = await technicalAnalysis.getKlineData(symbol, '1m', 1);
+      return klineData[0].close;
+    } catch (error) {
+      logger.error(`Current price fetch error for ${symbol}:`, error);
+      return 0;
+    }
   }
   
   calculatePnL(orderInfo, order) {

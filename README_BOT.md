@@ -9,7 +9,7 @@
 - **Multi-layer filtre sistemi** (Global + Local + AI)
 - **Risk management** ve position sizing
 - **Real-time Telegram** bildirimleri
-- **Binance** entegrasyonu (spot trading)
+- **KuCoin** entegrasyonu (spot trading)
 
 ### 📊 Filtre Sistemi
 1. **Global Market Filter** (BTC/ETH 4h EMA200)
@@ -60,7 +60,7 @@ cp env.example .env
 ```
 
 ### 3. Gerekli API Keys
-- **Binance API** (trading için)
+- **KuCoin API** (trading için)
 - **Telegram Bot Token** (bildirimler için)
 - **OpenAI API Key** (AI filtre için - opsiyonel)
 - **TradingView Webhook Secret** (güvenlik için)

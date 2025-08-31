@@ -21,11 +21,11 @@ async function initializeServices() {
     }
     
     // Exchange bağlantısını test et
-    if (process.env.BINANCE_API_KEY) {
+    if (process.env.KUCOIN_API_KEY) {
       await exchangeService.initialize();
-      logger.info('✅ Exchange servisi hazır');
+      logger.info('✅ KuCoin servisi hazır');
     } else {
-      logger.warn('⚠️ Exchange API keys bulunamadı');
+      logger.warn('⚠️ KuCoin API keys bulunamadı');
     }
     
     // Cron job'ları başlat

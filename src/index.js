@@ -5,6 +5,8 @@ require('dotenv').config();
 
 const logger = require('./utils/logger');
 const webhookRoutes = require('./routes/webhook');
+const statsRoutes = require('./routes/stats');
+const configRoutes = require('./routes/config');
 const { initializeServices } = require('./services');
 
 const app = express();
@@ -18,6 +20,8 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 app.use('/webhook', webhookRoutes);
+app.use('/api/stats', statsRoutes);
+app.use('/api/config', configRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

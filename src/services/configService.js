@@ -35,6 +35,13 @@ class ConfigService {
       // AI ayarları
       this.config.set('AI_ENABLED', process.env.AI_ENABLED === 'true');
       
+      // Advanced trading ayarları
+      this.config.set('AUTO_CLOSE_TIMEOUT_HOURS', parseInt(process.env.AUTO_CLOSE_TIMEOUT_HOURS) || 0);
+      this.config.set('PARTIAL_TP_ENABLED', process.env.PARTIAL_TP_ENABLED === 'true');
+      this.config.set('PARTIAL_TP_PERCENT', parseFloat(process.env.PARTIAL_TP_PERCENT) || 50);
+      this.config.set('TRAILING_STOP_ENABLED', process.env.TRAILING_STOP_ENABLED === 'true');
+      this.config.set('TRAILING_STOP_DISTANCE', parseFloat(process.env.TRAILING_STOP_DISTANCE) || 0.2);
+      
       this.initialized = true;
       logger.info('Config servisi başlatıldı', {
         usdtAmount: this.get('DEFAULT_USDT_AMOUNT'),

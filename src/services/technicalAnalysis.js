@@ -22,23 +22,25 @@ class TechnicalAnalysis {
     }
     
     try {
-      const response = await axios.get('https://api.binance.com/api/v3/klines', {
+      const response = await axios.get('https://api.kucoin.com/api/v1/market/candles', {
         params: {
           symbol: symbol,
-          interval: interval,
-          limit: limit
+          type: this.convertTimeframeToKuCoin(interval),
+          startAt: Math.floor(Date.now() / 1000) - (limit * this.getIntervalSeconds(interval)),
+          endAt: Math.floor(Date.now() / 1000)
         },
         timeout: 5000
       });
       
-      const klineData = response.data.map(kline => ({
-        openTime: parseInt(kline[0]),
+      // KuCoin API response format: [time, open, close, high, low, volume, turnover]
+      const klineData = response.data.data.map(kline => ({
+        openTime: parseInt(kline[0]) * 1000, // Convert to milliseconds
         open: parseFloat(kline[1]),
-        high: parseFloat(kline[2]),
-        low: parseFloat(kline[3]),
-        close: parseFloat(kline[4]),
+        close: parseFloat(kline[2]),
+        high: parseFloat(kline[3]),
+        low: parseFloat(kline[4]),
         volume: parseFloat(kline[5]),
-        closeTime: parseInt(kline[6])
+        closeTime: parseInt(kline[0]) * 1000 + this.getIntervalSeconds(interval) * 1000
       }));
       
       // Cache'e kaydet
@@ -193,6 +195,50 @@ class TechnicalAnalysis {
     return width;
   }
   
+  /**
+   * KuCoin timeframe converter
+   */
+  convertTimeframeToKuCoin(interval) {
+    const mapping = {
+      '1m': '1min',
+      '3m': '3min', 
+      '5m': '5min',
+      '15m': '15min',
+      '30m': '30min',
+      '1h': '1hour',
+      '2h': '2hour',
+      '4h': '4hour',
+      '6h': '6hour',
+      '8h': '8hour',
+      '12h': '12hour',
+      '1d': '1day',
+      '1w': '1week'
+    };
+    return mapping[interval] || '15min';
+  }
+  
+  /**
+   * Get interval in seconds
+   */
+  getIntervalSeconds(interval) {
+    const mapping = {
+      '1m': 60,
+      '3m': 180,
+      '5m': 300,
+      '15m': 900,
+      '30m': 1800,
+      '1h': 3600,
+      '2h': 7200,
+      '4h': 14400,
+      '6h': 21600,
+      '8h': 28800,
+      '12h': 43200,
+      '1d': 86400,
+      '1w': 604800
+    };
+    return mapping[interval] || 900;
+  }
+
   /**
    * Cache temizle
    */

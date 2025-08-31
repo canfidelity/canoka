@@ -1,6 +1,8 @@
 const ccxt = require('ccxt');
 const logger = require('../utils/logger');
 const configService = require('./configService');
+const simulationService = require('./simulationService');
+const advancedTradingService = require('./advancedTradingService');
 
 class ExchangeService {
   constructor() {
@@ -12,18 +14,30 @@ class ExchangeService {
   
   async initialize() {
     try {
-      const apiKey = process.env.BINANCE_API_KEY;
-      const secret = process.env.BINANCE_SECRET_KEY;
-      const testnet = process.env.BINANCE_TESTNET === 'true';
+      // Simulation service'i başlat
+      await simulationService.initialize();
       
-      if (!apiKey || !secret) {
-        throw new Error('Binance API keys eksik');
+      // Simulation mode'da exchange bağlantısı opsiyonel
+      if (process.env.SIMULATION_MODE === 'true') {
+        logger.info('🎮 Simulation mode - Exchange bağlantısı atlanıyor');
+        this.initialized = true;
+        return;
       }
       
-      this.exchange = new ccxt.binance({
+      const apiKey = process.env.KUCOIN_API_KEY;
+      const secret = process.env.KUCOIN_SECRET_KEY;
+      const passphrase = process.env.KUCOIN_PASSPHRASE;
+      const sandbox = process.env.KUCOIN_SANDBOX === 'true';
+      
+      if (!apiKey || !secret || !passphrase) {
+        throw new Error('KuCoin API keys eksik (API key, secret, passphrase gerekli)');
+      }
+      
+      this.exchange = new ccxt.kucoin({
         apiKey: apiKey,
         secret: secret,
-        sandbox: testnet,
+        password: passphrase,
+        sandbox: sandbox,
         options: {
           defaultType: 'spot' // spot trading
         }
@@ -33,7 +47,7 @@ class ExchangeService {
       await this.testConnection();
       
       this.initialized = true;
-      logger.info(`Exchange servisi başlatıldı (${testnet ? 'TESTNET' : 'MAINNET'})`);
+      logger.info(`KuCoin servisi başlatıldı (${sandbox ? 'SANDBOX' : 'MAINNET'})`);
       
     } catch (error) {
       logger.error('Exchange başlatma hatası:', error);
@@ -68,9 +82,16 @@ class ExchangeService {
         type,
         price,
         stopPrice,
-        takeProfitPrice
+        takeProfitPrice,
+        simulation: process.env.SIMULATION_MODE === 'true'
       });
       
+      // Simulation mode check
+      if (process.env.SIMULATION_MODE === 'true') {
+        return await simulationService.simulateOrder(tradeParams);
+      }
+      
+      // Real trading
       // Ana order oluştur
       const mainOrder = await this.createMainOrder(tradeParams);
       
@@ -145,13 +166,25 @@ class ExchangeService {
       side: mainOrder.side,
       amount: mainOrder.amount,
       price: mainOrder.price,
+      entryPrice: mainOrder.price,
+      quantity: mainOrder.amount,
       status: mainOrder.status,
       tpSlOrders,
       createdAt: new Date(),
-      lastUpdate: new Date()
+      lastUpdate: new Date(),
+      // Advanced trading data
+      dcaSteps: 0,
+      lastDCAPrice: mainOrder.price,
+      totalQuantity: mainOrder.amount,
+      partialExecuted: false,
+      remainingQuantity: mainOrder.amount
     };
     
     this.activeOrders.set(mainOrder.id, orderInfo);
+    
+    // Setup advanced features
+    advancedTradingService.setupAutoClose(mainOrder.id, orderInfo);
+    
     logger.info(`Order takip ediliyor: ${mainOrder.id}`);
   }
   
@@ -271,6 +304,16 @@ class ExchangeService {
    */
   async getBalance() {
     try {
+      // Simulation mode
+      if (process.env.SIMULATION_MODE === 'true') {
+        const stats = simulationService.getPerformanceStats();
+        return {
+          usdt: stats.balance,
+          total: stats.balance
+        };
+      }
+      
+      // Real exchange
       const balance = await this.exchange.fetchBalance();
       return {
         usdt: balance.USDT?.free || 0,
