@@ -9,6 +9,7 @@ yarn-error.log*
 # Logs
 logs/
 *.log
+.env
 
 # Runtime data
 pids/

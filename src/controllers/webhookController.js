@@ -120,19 +120,34 @@ class WebhookController {
     const signal = processResult.signal;
     const config = require('../services/configService');
     
-    // Temel parametreler
-    const usdtAmount = config.get('DEFAULT_USDT_AMOUNT');
-    const tpPercent = config.get('DEFAULT_TP_PERCENT');
-    const slPercent = config.get('DEFAULT_SL_PERCENT');
+    // Temel parametreler - default değerlerle
+    const usdtAmount = config.get('DEFAULT_USDT_AMOUNT') || 10;
+    const tpPercent = config.get('DEFAULT_TP_PERCENT') || 0.5;
+    const slPercent = config.get('DEFAULT_SL_PERCENT') || 0.3;
     
-    // Entry price hesapla
+    // Entry price hesapla - number kontrolü
     const entryDistance = config.get('ENTRY_DISTANCE_PERCENT') || 0;
-    const entryPrice = signal.action === 'BUY' 
-      ? signal.price * (1 - entryDistance / 100)
-      : signal.price * (1 + entryDistance / 100);
+    const signalPrice = parseFloat(signal.price);
     
-    // Quantity hesapla
+    if (isNaN(signalPrice) || signalPrice <= 0) {
+      throw new Error(`Geçersiz sinyal fiyatı: ${signal.price}`);
+    }
+    
+    const entryPrice = signal.action === 'BUY' 
+      ? signalPrice * (1 - entryDistance / 100)
+      : signalPrice * (1 + entryDistance / 100);
+    
+    // Quantity hesapla - NaN kontrolü
     const quantity = usdtAmount / entryPrice;
+    
+    logger.info('💰 Trade params hesaplama:', {
+      usdtAmount,
+      signalPrice,
+      entryPrice: entryPrice.toFixed(2),
+      quantity: quantity.toFixed(6),
+      tpPercent,
+      slPercent
+    });
     
     // TP/SL hesapla
     const tpPrice = signal.action === 'BUY'

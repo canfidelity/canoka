@@ -45,6 +45,13 @@ class SimulationService {
     
     const { symbol, side, quantity, price, stopPrice, takeProfitPrice } = orderParams;
     
+    // Parameter validation
+    logger.info('🔍 Simulation order params:', {
+      symbol, side, quantity, price, stopPrice, takeProfitPrice,
+      quantityNaN: isNaN(quantity),
+      priceNaN: isNaN(price)
+    });
+    
     // Simulated order ID
     const orderId = `SIM_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
@@ -52,10 +59,18 @@ class SimulationService {
     const currentPrice = await this.getCurrentPrice(symbol);
     const entryPrice = price || currentPrice;
     
+    // NaN kontrolü
+    if (isNaN(quantity) || quantity <= 0) {
+      throw new Error(`Geçersiz quantity: ${quantity}`);
+    }
+    if (isNaN(entryPrice) || entryPrice <= 0) {
+      throw new Error(`Geçersiz entryPrice: ${entryPrice}`);
+    }
+    
     // Balance check
     const orderValue = quantity * entryPrice;
-    if (orderValue > this.simulatedBalance) {
-      throw new Error(`Yetersiz simulated balance: $${this.simulatedBalance.toFixed(2)}`);
+    if (isNaN(orderValue) || orderValue > this.simulatedBalance) {
+      throw new Error(`Yetersiz simulated balance: $${this.simulatedBalance.toFixed(2)} (orderValue: $${orderValue})`);
     }
     
     // Create simulated trade
@@ -131,6 +146,7 @@ class SimulationService {
         }
         
         if (shouldClose) {
+          logger.info(`🎯 TP/SL Triggered: ${trade.symbol} ${exitReason} at $${currentPrice}`);
           await this.closeTrade(orderId, currentPrice, exitReason);
           clearInterval(checkInterval);
         }
@@ -159,12 +175,36 @@ class SimulationService {
     const trade = this.activeTrades.get(orderId);
     if (!trade) return;
     
+    // NaN kontrolü
+    if (isNaN(exitPrice) || exitPrice <= 0) {
+      logger.error(`Geçersiz exit price: ${exitPrice}`);
+      return;
+    }
+    
+    if (isNaN(trade.entryPrice) || isNaN(trade.quantity)) {
+      logger.error(`Trade data corrupted:`, {
+        orderId,
+        entryPrice: trade.entryPrice,
+        quantity: trade.quantity,
+        orderValue: trade.orderValue
+      });
+      return;
+    }
+    
     // Calculate P&L
     let pnl = 0;
     if (trade.side === 'buy') {
       pnl = (exitPrice - trade.entryPrice) * trade.quantity;
     } else {
       pnl = (trade.entryPrice - exitPrice) * trade.quantity;
+    }
+    
+    // NaN kontrolü
+    if (isNaN(pnl)) {
+      logger.error(`P&L calculation failed:`, {
+        exitPrice, entryPrice: trade.entryPrice, quantity: trade.quantity
+      });
+      pnl = 0;
     }
     
     // Update trade
@@ -174,8 +214,13 @@ class SimulationService {
     trade.reason = reason;
     trade.status = 'closed';
     
-    // Update balance
-    this.simulatedBalance += trade.orderValue + pnl;
+    // Update balance - NaN kontrolü
+    const balanceUpdate = trade.orderValue + pnl;
+    if (!isNaN(balanceUpdate)) {
+      this.simulatedBalance += balanceUpdate;
+    } else {
+      logger.error(`Balance update failed - NaN detected`);
+    }
     
     // Update statistics
     this.updateStats(trade);
@@ -241,14 +286,35 @@ class SimulationService {
    */
   async getCurrentPrice(symbol) {
     try {
+      // Symbol format düzelt: ETHUSDT → ETH-USDT
+      const kucoinSymbol = symbol.includes('-') ? symbol : symbol.replace(/USDT$/, '-USDT');
+      
       // KuCoin ticker API
       const axios = require('axios');
-      const response = await axios.get(`https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${symbol}`);
-      return parseFloat(response.data.data.price);
+      const response = await axios.get(`https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${kucoinSymbol}`);
+      const price = parseFloat(response.data.data.price);
+      
+      // Sadece debug için log (normal durumda log basma)
+      // logger.info(`💰 ${symbol} (${kucoinSymbol}) current price: $${price}`);
+      return price;
+      
     } catch (error) {
-      // Fallback random price variation
-      logger.warn(`Price API error for ${symbol}, using fallback`);
-      return 1.0 + (Math.random() - 0.5) * 0.02; // ±1% variation
+      logger.error(`❌ Price API error for ${symbol}:`, error.message);
+      
+      // Technical analysis'ten son fiyatı al
+      try {
+        const technicalAnalysis = require('./technicalAnalysis');
+        const klineData = await technicalAnalysis.getKlineData(symbol, '1m', 1);
+        const lastPrice = klineData[0].close;
+        
+        logger.warn(`📊 Using technical analysis price for ${symbol}: $${lastPrice}`);
+        return lastPrice;
+        
+      } catch (fallbackError) {
+        // Signal'dan gelen fiyatı kullan (en mantıklısı)
+        logger.warn(`❌ All price sources failed for ${symbol}, check API connectivity`);
+        throw new Error(`${symbol} için gerçek fiyat alınamadı - API sorunu`);
+      }
     }
   }
   

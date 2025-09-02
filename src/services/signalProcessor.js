@@ -29,8 +29,7 @@ class SignalProcessor {
         return results;
       }
       
-      // 2. Local Coin Filtreleri - KALDIRILDI (Gereksiz ve çok katı)
-      // rVOL threshold'u çok yüksek olduğu için hiç sinyal geçirmiyor
+      // 2. Local Coin Filtreleri - KALDIRILDI (ESKİ HAL)
       const localResult = { passed: true, reason: 'Local filtreler kaldırıldı - gereksiz' };
       results.filterResults.localFilters = localResult;
       logger.info('✅ Local filtreler kaldırıldı - sadece Global filter + AlphaTrend kullanılıyor');

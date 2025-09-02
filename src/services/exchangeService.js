@@ -307,9 +307,17 @@ class ExchangeService {
       // Simulation mode
       if (process.env.SIMULATION_MODE === 'true') {
         const stats = simulationService.getPerformanceStats();
+        const balance = stats.balance || 1000; // Default 1000 if undefined
+        
+        logger.info('💰 Simulation balance check:', {
+          rawBalance: stats.balance,
+          finalBalance: balance,
+          isNaN: isNaN(balance)
+        });
+        
         return {
-          usdt: stats.balance,
-          total: stats.balance
+          usdt: balance,
+          total: balance
         };
       }
       

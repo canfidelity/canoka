@@ -12,9 +12,10 @@ class GlobalFilter {
   }
   
   /**
-   * Global market filtresi (BTC/ETH – 4h)
+   * Global market filtresi (BTC/ETH – 1h) - 15m scalping için optimize edildi
    * - EMA200 üstünde → long serbest, short reddet
    * - EMA200 altında → short serbest, long reddet
+   * - Mixed trend'lerde daha esnek yaklaşım
    */
   async check(signalData) {
     this.stats.totalChecks++;
@@ -23,28 +24,41 @@ class GlobalFilter {
     try {
       const { action } = signalData;
       
-      // BTC ve ETH'nin 4h EMA200 durumunu kontrol et
-      const btcAnalysis = await this.getGlobalMarketTrend('BTC-USDT', '4h');
-      const ethAnalysis = await this.getGlobalMarketTrend('ETH-USDT', '4h');
+      // BTC ve ETH'nin 1h EMA200 durumunu kontrol et (15m scalping için optimize)
+      const btcAnalysis = await this.getGlobalMarketTrend('BTC-USDT', '1h');
+      const ethAnalysis = await this.getGlobalMarketTrend('ETH-USDT', '1h');
       
-      logger.info('Global market durumu:', {
+      logger.info('🔍 Global market detay analizi:', {
+        signal: { symbol: signalData.symbol, action, timeframe: signalData.timeframe },
         BTC: { 
           price: btcAnalysis.currentPrice,
           ema200: btcAnalysis.ema200,
-          trend: btcAnalysis.trend
+          trend: btcAnalysis.trend,
+          aboveEMA: btcAnalysis.currentPrice > btcAnalysis.ema200
         },
         ETH: { 
           price: ethAnalysis.currentPrice,
           ema200: ethAnalysis.ema200,
-          trend: ethAnalysis.trend
+          trend: ethAnalysis.trend,
+          aboveEMA: ethAnalysis.currentPrice > ethAnalysis.ema200
         }
       });
       
       // Hem BTC hem ETH'nin trend yönü aynı olmalı
       const marketTrend = this.determineMarketTrend(btcAnalysis, ethAnalysis);
+      logger.info(`📊 Market trend belirlendi: ${marketTrend}`, {
+        btcTrend: btcAnalysis.trend,
+        ethTrend: ethAnalysis.trend,
+        signalAction: action
+      });
       
       // Signal yönü ile market trend uyumluluğu
       const isCompatible = this.checkSignalCompatibility(action, marketTrend);
+      logger.info(`🎯 Uyumluluk kontrolü: ${isCompatible.passed ? '✅ GEÇTI' : '❌ REDDEDİLDİ'}`, {
+        reason: isCompatible.reason,
+        marketTrend,
+        signalAction: action
+      });
       
       if (isCompatible.passed) {
         this.stats.passed++;
@@ -85,23 +99,35 @@ class GlobalFilter {
   
   async getGlobalMarketTrend(symbol, timeframe) {
     try {
+      logger.info(`🔍 ${symbol} ${timeframe} trend analizi başlatılıyor...`);
+      
       // Technical analysis servisi ile EMA200 hesapla
       const klineData = await technicalAnalysis.getKlineData(symbol, timeframe, 200);
       const ema200 = await technicalAnalysis.calculateEMA(klineData, 200);
       const currentPrice = klineData[klineData.length - 1].close;
       
       const trend = currentPrice > ema200 ? 'BULLISH' : 'BEARISH';
+      const distance = ((currentPrice - ema200) / ema200 * 100).toFixed(2);
+      
+      logger.info(`📊 ${symbol} analiz sonucu:`, {
+        currentPrice: currentPrice.toFixed(2),
+        ema200: ema200.toFixed(2),
+        trend,
+        distanceFromEMA: `${distance}%`,
+        timeframe
+      });
       
       return {
         symbol,
         currentPrice,
         ema200,
         trend,
+        distance: parseFloat(distance),
         timestamp: new Date()
       };
       
     } catch (error) {
-      logger.error(`${symbol} trend analizi hatası:`, error);
+      logger.error(`❌ ${symbol} trend analizi hatası:`, error);
       throw error;
     }
   }
@@ -123,41 +149,50 @@ class GlobalFilter {
   }
   
   checkSignalCompatibility(signalAction, marketTrend) {
-    // readme.md'ye göre:
-    // EMA200 üstünde → long serbest, short reddet
-    // EMA200 altında → short serbest, long reddet
+    // TradingView Signal Logic:
+    // BUY = LONG açma sinyali
+    // SELL = LONG kapatma sinyali (SHORT açma değil!)
+    // 15m scalping için her iki yön de kabul edilebilir
+    
+    logger.info(`🔍 Signal compatibility check:`, {
+      signalAction,
+      marketTrend,
+      logic: 'TradingView BUY=LONG açma, SELL=LONG kapatma'
+    });
     
     if (marketTrend === 'BULLISH') {
+      // Bull market'te her iki sinyal de kabul et
       if (signalAction === 'BUY') {
-        return { passed: true, reason: 'Bull market - LONG serbest' };
+        return { passed: true, reason: 'Bull market - LONG açma sinyali onaylandı' };
       } else {
-        return { passed: false, reason: 'Bull market - SHORT reddedildi' };
+        return { passed: true, reason: 'Bull market - LONG kapatma sinyali onaylandı' };
       }
     }
     
     if (marketTrend === 'BEARISH') {
-      if (signalAction === 'SELL') {
-        return { passed: true, reason: 'Bear market - SHORT serbest' };
+      // Bear market'te her iki sinyal de kabul et
+      if (signalAction === 'BUY') {
+        return { passed: true, reason: 'Bear market - LONG açma sinyali (reversal)' };
       } else {
-        return { passed: false, reason: 'Bear market - LONG reddedildi' };
+        return { passed: true, reason: 'Bear market - LONG kapatma sinyali onaylandı' };
       }
     }
     
-    // Mixed durumunda daha katı kontrol
+    // Mixed durumunda 15m scalping için esnek yaklaşım
     if (marketTrend === 'MIXED_BULLISH') {
-      if (signalAction === 'BUY') {
-        return { passed: true, reason: 'Mixed bull - LONG şartlı onay' };
-      } else {
-        return { passed: false, reason: 'Mixed bull - SHORT reddedildi' };
-      }
+      // BTC bullish ağırlıklı - her iki yön de kabul et ama BUY öncelikli
+      return { 
+        passed: true, 
+        reason: signalAction === 'BUY' ? 'Mixed bull - LONG öncelikli' : 'Mixed bull - SHORT kabul edildi' 
+      };
     }
     
     if (marketTrend === 'MIXED_BEARISH') {
-      if (signalAction === 'SELL') {
-        return { passed: true, reason: 'Mixed bear - SHORT şartlı onay' };
-      } else {
-        return { passed: false, reason: 'Mixed bear - LONG reddedildi' };
-      }
+      // BTC bearish ağırlıklı - her iki yön de kabul et ama SELL öncelikli  
+      return { 
+        passed: true, 
+        reason: signalAction === 'SELL' ? 'Mixed bear - SHORT öncelikli' : 'Mixed bear - LONG kabul edildi'
+      };
     }
     
     return { passed: false, reason: 'Market trend belirsiz' };

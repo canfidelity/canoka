@@ -118,11 +118,36 @@ class BacktestService {
           
           this.results.totalSignals++;
           
+          // Filter stats güncelle
+          if (processResult.filterResults) {
+            if (processResult.filterResults.globalFilter !== undefined) {
+              if (processResult.filterResults.globalFilter.passed) {
+                this.results.filterStats.globalFilter.passed++;
+              } else {
+                this.results.filterStats.globalFilter.failed++;
+              }
+            }
+            if (processResult.filterResults.localFilters !== undefined) {
+              if (processResult.filterResults.localFilters.passed) {
+                this.results.filterStats.localFilters.passed++;
+              } else {
+                this.results.filterStats.localFilters.failed++;
+              }
+            }
+            if (processResult.filterResults.aiFilter !== undefined) {
+              if (processResult.filterResults.aiFilter.passed) {
+                this.results.filterStats.aiFilter.passed++;
+              } else {
+                this.results.filterStats.aiFilter.failed++;
+              }
+            }
+          }
+          
           if (processResult.approved) {
             this.results.approvedSignals++;
             
-            // Trade simulation
-            const tradeResult = await this.simulateTrade(signal, currentPrice, usdtPerTrade);
+            // Trade simulation - gerçek historical data ile
+            const tradeResult = await this.simulateTrade(signal, currentPrice, usdtPerTrade, klineData, i);
             
             if (tradeResult.success) {
               // Balance güncelle
@@ -148,13 +173,18 @@ class BacktestService {
                 exitPrice: tradeResult.exitPrice,
                 pnl: tradeResult.pnl,
                 balance: currentBalance,
-                drawdown: currentDrawdown
+                drawdown: currentDrawdown,
+                exitReason: tradeResult.exitReason,
+                tpPrice: tradeResult.tpPrice,
+                slPrice: tradeResult.slPrice
               });
               
               if (tradeResult.pnl > 0) {
                 this.results.totalProfit += tradeResult.pnl;
+                logger.info(`💰 Profit added: +$${tradeResult.pnl.toFixed(2)}, Total: $${this.results.totalProfit.toFixed(2)}`);
               } else {
                 this.results.totalLoss += Math.abs(tradeResult.pnl);
+                logger.info(`💸 Loss added: -$${Math.abs(tradeResult.pnl).toFixed(2)}, Total: $${this.results.totalLoss.toFixed(2)}`);
               }
             }
             
@@ -198,61 +228,73 @@ class BacktestService {
   }
   
   /**
-   * Historical kline data çek
+   * Historical kline data çek - PAGINATION ile
    */
   async getHistoricalData(symbol, timeframe, startDate, endDate) {
     try {
       logger.info(`🔍 Historical data çekiliyor: ${symbol} ${timeframe} ${startDate} - ${endDate}`);
       
-      // KuCoin API'den historical data çek
       const axios = require('axios');
-      
       const startTimestamp = Math.floor(startDate.getTime() / 1000);
       const endTimestamp = Math.floor(endDate.getTime() / 1000);
       
       logger.info(`🔍 Timestamps: ${startTimestamp} - ${endTimestamp}`);
       
-      const response = await axios.get('https://api.kucoin.com/api/v1/market/candles', {
-        params: {
-          symbol: symbol,
-          type: this.convertTimeframeToKuCoin(timeframe),
-          startAt: startTimestamp,
-          endAt: endTimestamp
+      // PAGINATION: 7 günlük batch'ler halinde çek
+      const batchSize = 7 * 24 * 60 * 60; // 7 gün
+      let allData = [];
+      
+      for (let currentStart = startTimestamp; currentStart < endTimestamp; currentStart += batchSize) {
+        const currentEnd = Math.min(currentStart + batchSize, endTimestamp);
+        
+        logger.info(`🔍 Batch çekiliyor: ${new Date(currentStart * 1000)} - ${new Date(currentEnd * 1000)}`);
+        
+        try {
+          const response = await axios.get('https://api.kucoin.com/api/v1/market/candles', {
+            params: {
+              symbol: symbol,
+              type: this.convertTimeframeToKuCoin(timeframe),
+              startAt: currentStart,
+              endAt: currentEnd
+            }
+          });
+          
+          if (response.data.data && response.data.data.length > 0) {
+            const batchData = response.data.data.map(kline => ({
+              openTime: parseInt(kline[0]) * 1000,
+              open: parseFloat(kline[1]),
+              close: parseFloat(kline[2]),
+              high: parseFloat(kline[3]),
+              low: parseFloat(kline[4]),
+              volume: parseFloat(kline[5])
+            }));
+            
+            allData = allData.concat(batchData);
+            logger.info(`✅ Batch ${batchData.length} bar eklendi. Toplam: ${allData.length}`);
+          }
+          
+          // Rate limit için bekle
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+        } catch (batchError) {
+          logger.warn(`⚠️ Batch error: ${batchError.message}`);
+          continue;
         }
-      });
-      
-      logger.info(`🔍 KuCoin API response code: ${response.data.code}`);
-      logger.info(`🔍 KuCoin API data length: ${response.data.data ? response.data.data.length : 0}`);
-      
-      if (!response.data.data || response.data.data.length === 0) {
-        logger.warn('⚠️ KuCoin API\'den data gelmedi, mock data oluşturuluyor');
-        throw new Error('Historical data bulunamadı');
       }
       
-      logger.info(`✅ KuCoin API\'den ${response.data.data.length} bar alındı`);
+      if (allData.length === 0) {
+        throw new Error('Hiç historical data alınamadı');
+      }
       
-      // Data format'ını düzenle
-      const formattedData = response.data.data.map(kline => ({
-        openTime: parseInt(kline[0]) * 1000,
-        open: parseFloat(kline[1]),
-        close: parseFloat(kline[2]),
-        high: parseFloat(kline[3]),
-        low: parseFloat(kline[4]),
-        volume: parseFloat(kline[5])
-      }));
+      // Data'yı timestamp'e göre sırala
+      allData.sort((a, b) => a.openTime - b.openTime);
       
-      logger.info(`✅ Data formatlandı: ${formattedData.length} bar`);
-      return formattedData;
+      logger.info(`✅ Toplam ${allData.length} bar alındı (${startDate} - ${endDate})`);
+      return allData;
       
     } catch (error) {
       logger.error(`❌ Historical data fetch error: ${error.message}`);
-      logger.error(`❌ Error stack: ${error.stack}`);
-      
-      logger.info(`🔄 Mock data oluşturuluyor...`);
-      // Fallback: Mock data oluştur
-      const mockData = this.generateMockData(startDate, endDate, timeframe);
-      logger.info(`✅ Mock data oluşturuldu: ${mockData.length} bar`);
-      return mockData;
+      throw error;
     }
   }
   
@@ -369,8 +411,8 @@ class BacktestService {
       // Signal koşulları
       let signal = null;
       
-      // BUY Signal: AlphaTrend crossover
-      if (alphaTrend > alphaTrendPrev2 && alphaTrendPrev <= alphaTrendPrev2) {
+      // BUY Signal: AlphaTrend crossover (ESKİ BASIT HAL)
+      if (alphaTrend > alphaTrendPrev && alphaTrendPrev <= alphaTrendPrev2) {
         signal = {
           strategy: 'AlphaTrend',
           action: 'BUY',
@@ -389,8 +431,8 @@ class BacktestService {
         
         logger.info(`🚀 BUY Signal generated at index ${index}: AT=${alphaTrend}, AT-1=${alphaTrendPrev}, AT-2=${alphaTrendPrev2}`);
       }
-      // SELL Signal: AlphaTrend crossunder
-      else if (alphaTrend < alphaTrendPrev2 && alphaTrendPrev >= alphaTrendPrev2) {
+      // SELL Signal: AlphaTrend crossunder (ESKİ BASIT HAL)
+      else if (alphaTrend < alphaTrendPrev && alphaTrendPrev >= alphaTrendPrev2) {
         signal = {
           strategy: 'AlphaTrend',
           action: 'SELL',
@@ -535,31 +577,83 @@ class BacktestService {
   }
   
   /**
-   * Trade simulation
+   * Trade simulation - gerçek historical data ile TP/SL hit detection
    */
-  async simulateTrade(signal, entryPrice, usdtAmount) {
+  async simulateTrade(signal, entryPrice, usdtAmount, historicalData, entryIndex) {
     try {
       const quantity = usdtAmount / entryPrice;
-      const tpPercent = configService.get('DEFAULT_TP_PERCENT') / 100;
-      const slPercent = configService.get('DEFAULT_SL_PERCENT') / 100;
+      const tpPercent = configService.get('DEFAULT_TP_PERCENT'); // Zaten % cinsinden
+      const slPercent = configService.get('DEFAULT_SL_PERCENT'); // Zaten % cinsinden
       
-      // TP/SL fiyatları hesapla
+      // TP/SL fiyatları hesapla (% cinsinden)
       const tpPrice = signal.action === 'BUY' 
-        ? entryPrice * (1 + tpPercent)
-        : entryPrice * (1 - tpPercent);
+        ? entryPrice * (1 + tpPercent / 100)
+        : entryPrice * (1 - tpPercent / 100);
         
       const slPrice = signal.action === 'BUY'
-        ? entryPrice * (1 - slPercent)
-        : entryPrice * (1 + slPercent);
+        ? entryPrice * (1 - slPercent / 100)
+        : entryPrice * (1 + slPercent / 100);
       
-      // Gerçek TP/SL fiyatları kullan (random exit yok)
-      let exitPrice, pnl;
+      logger.info(`🎯 TP/SL Levels: Entry=$${entryPrice} TP=$${tpPrice.toFixed(2)} SL=$${slPrice.toFixed(2)}`);
       
-      // Her zaman TP'ye çık (gerçekçi backtest için)
-      exitPrice = tpPrice;
-      pnl = signal.action === 'BUY' 
-        ? (exitPrice - entryPrice) * quantity
-        : (entryPrice - exitPrice) * quantity;
+      // Gerçek historical data ile TP/SL hit detection
+      let exitPrice, exitReason, pnl;
+      
+      // Entry sonrası historical data'da TP/SL hit ara
+      for (let i = entryIndex + 1; i < historicalData.length; i++) {
+        const candle = historicalData[i];
+        
+        if (signal.action === 'BUY') {
+          // LONG position için
+          if (candle.high >= tpPrice) {
+            exitPrice = tpPrice;
+            exitReason = 'TP_HIT';
+            logger.info(`🎯 TP_HIT: Entry=$${entryPrice}, TP=$${tpPrice}, Candle High=$${candle.high}`);
+            break;
+          } else if (candle.low <= slPrice) {
+            exitPrice = slPrice;
+            exitReason = 'SL_HIT';
+            logger.info(`🛑 SL_HIT: Entry=$${entryPrice}, SL=$${slPrice}, Candle Low=$${candle.low}`);
+            break;
+          }
+        } else {
+          // SHORT position için (SELL signal)
+          if (candle.low <= tpPrice) {
+            exitPrice = tpPrice;
+            exitReason = 'TP_HIT';
+            logger.info(`🎯 TP_HIT: Entry=$${entryPrice}, TP=$${tpPrice}, Candle Low=$${candle.low}`);
+            break;
+          } else if (candle.high >= slPrice) {
+            exitPrice = slPrice;
+            exitReason = 'SL_HIT';
+            logger.info(`🛑 SL_HIT: Entry=$${entryPrice}, SL=$${slPrice}, Candle High=$${candle.high}`);
+            break;
+          }
+        }
+      }
+      
+      // Eğer TP/SL hit olmadıysa, son fiyattan çık
+      if (!exitPrice) {
+        exitPrice = historicalData[historicalData.length - 1].close;
+        exitReason = 'END_OF_DATA';
+        
+        // END_OF_DATA için debug logging
+        logger.info(`📊 END_OF_DATA: Entry=$${entryPrice}, Exit=$${exitPrice}, Qty=${quantity.toFixed(6)}`);
+      }
+      
+      // P&L hesapla - DOĞRU FORMÜL
+      if (signal.action === 'BUY') {
+        // LONG position: (exit - entry) * quantity
+        pnl = (exitPrice - entryPrice) * quantity;
+      } else {
+        // SHORT position: (entry - exit) * quantity  
+        pnl = (entryPrice - exitPrice) * quantity;
+      }
+      
+      // Debug logging
+      logger.info(`💰 P&L Debug: Entry=$${entryPrice}, Exit=$${exitPrice}, Qty=${quantity.toFixed(6)}, P&L=$${pnl.toFixed(2)}`);
+      
+      logger.info(`📊 Trade Result: ${exitReason} at $${exitPrice.toFixed(2)}, P&L: $${pnl.toFixed(2)}`);
       
       return {
         success: true,
@@ -568,7 +662,8 @@ class BacktestService {
         quantity,
         pnl,
         tpPrice,
-        slPrice
+        slPrice,
+        exitReason
       };
       
     } catch (error) {
@@ -581,8 +676,13 @@ class BacktestService {
    * Final stats hesapla
    */
   calculateFinalStats() {
-    if (this.results.approvedSignals > 0) {
-      this.results.winRate = (this.results.totalProfit / (this.results.totalProfit + this.results.totalLoss)) * 100;
+    // Win rate = Kazanan trade sayısı / Toplam trade sayısı
+    const winningTrades = this.results.trades.filter(trade => trade.pnl > 0).length;
+    const totalTrades = this.results.trades.length;
+    
+    if (totalTrades > 0) {
+      this.results.winRate = (winningTrades / totalTrades) * 100;
+      logger.info(`📊 Win Rate Calculation: ${winningTrades}/${totalTrades} = ${this.results.winRate.toFixed(2)}%`);
     }
     
     // Filter success rates

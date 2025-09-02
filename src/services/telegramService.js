@@ -64,22 +64,28 @@ class TelegramService {
   formatApprovedSignal(signal, processResult, tradeResult) {
     const emoji = signal.action === 'BUY' ? '🟢' : '🔴';
     
+    // Trade params kontrolü
+    const tradeParams = tradeResult?.params || {};
+    const quantity = tradeParams.quantity ? tradeParams.quantity.toFixed(6) : 'N/A';
+    const tpPrice = tradeParams.takeProfitPrice ? `$${tradeParams.takeProfitPrice.toFixed(2)}` : 'N/A';
+    const slPrice = tradeParams.stopPrice ? `$${tradeParams.stopPrice.toFixed(2)}` : 'N/A';
+    
     return `
 ${emoji} <b>SINYAL ONAYLANDI</b>
 
 📊 <b>Coin:</b> ${signal.symbol}
 🎯 <b>Aksiyon:</b> ${signal.action}
 💰 <b>Fiyat:</b> $${signal.price}
-⏰ <b>Timeframe:</b> ${signal.timeframe}
+⏰ <b>Timeframe:</b> ${signal.timeframe || '15m'}
 
 ✅ <b>Filtre Sonuçları:</b>
 ${this.formatFilterResults(processResult.filterResults)}
 
 📈 <b>Trade Detayları:</b>
 🆔 Order ID: ${tradeResult?.orderId || 'N/A'}
-💵 Miktar: ${processResult.tradeParams?.quantity || 'N/A'}
-🎯 TP: ${processResult.tradeParams?.takeProfitPrice || 'N/A'}
-🛑 SL: ${processResult.tradeParams?.stopPrice || 'N/A'}
+💵 Miktar: ${quantity}
+🎯 TP: ${tpPrice}
+🛑 SL: ${slPrice}
 
 ⏱ <b>İşlem Zamanı:</b> ${new Date().toLocaleString('tr-TR')}
     `.trim();
